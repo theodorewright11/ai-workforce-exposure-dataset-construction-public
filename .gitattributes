@@ -1,0 +1,5 @@
+# Normalize line endings for source text, but keep data files byte-exact across
+# platforms (no CRLF/LF conversion) so the committed inputs are reproducible.
+* text=auto eol=lf
+*.csv binary
+*.tsv binary

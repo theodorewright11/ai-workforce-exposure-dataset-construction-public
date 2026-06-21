@@ -1,0 +1,124 @@
+# ---------------------------------------------------------------------------
+# Data directory: ignore everything by default, then allowlist the raw inputs.
+# Intermediate files (first_pass_*, second_pass_*, third_pass_*) and final
+# outputs (data/final/) are produced by running the notebook and are NOT
+# committed -- only the source inputs needed to reproduce them are.
+# ---------------------------------------------------------------------------
+data/*
+
+# Keep the (otherwise empty) output directories present in a fresh clone so the
+# notebook can write into them without a manual mkdir.
+!data/final/
+data/final/*
+!data/final/.gitkeep
+!data/merged_data_files/
+data/merged_data_files/*
+!data/merged_data_files/.gitkeep
+
+# --- Raw inputs used by scripts/data_merge.ipynb (allowlisted) ---
+
+# AEI task percentages -- v1/v2 inputs (Part 1)
+!data/task_pct_v[1-5].csv
+!data/task_pct_api_v[3-5].csv
+
+# AEI raw conversation/API data -- v3+ inputs (Part 1)
+!data/aei_raw_claude_ai_2025-08-04_to_2025-08-11.csv
+!data/aei_raw_1p_api_2025-08-04_to_2025-08-11.csv
+!data/aei_raw_claude_ai_2025-11-13_to_2025-11-20.csv
+!data/aei_raw_1p_api_2025-11-13_to_2025-11-20.csv
+!data/aei_raw_claude_ai_2026-02-05_to_2026-02-12.csv
+!data/aei_raw_1p_api_2026-02-05_to_2026-02-12.csv
+
+# AEI auto/aug scores (Part 2)
+!data/automation_vs_augmentation_by_task_v[2-5].csv
+!data/automation_vs_augmentation_by_task_api_v[3-5].csv
+
+# MCP task results (Part 1)
+!data/task_results_2025-04-24.csv
+!data/task_results_2025-05-24.csv
+!data/task_results_2025-07-23.csv
+!data/task_results_2026-02-18.csv
+
+# MCP raw results -- used in Part 2 for Microsoft auto/aug calibration.
+# EXCLUDED: 186MB, exceeds GitHub's 100MB per-file limit.
+# Download from: https://huggingface.co/datasets/theodorewright11/mcp_to_onet_classification
+# data/mcp_results_2026-02-18.csv
+
+# Microsoft (Part 1)
+!data/iwa_metrics.csv
+
+# ECO baselines (Part 1)
+!data/task_pct_eco_2015.csv
+!data/task_pct_eco_2025.csv
+
+# O*NET task statements
+!data/task_statements_v20.1.csv
+!data/task_statements_v29.0.csv
+!data/task_statements_v30.1.csv
+
+# O*NET taxonomy (DWA/IWA/GWA)
+!data/tasks_dwa_iwa_gwa_v20.1.csv
+!data/tasks_dwa_iwa_gwa_v30.1.csv
+!data/tasks_dwa_iwa_gwa_v30.1_physical.csv
+
+# O*NET task ratings (Part 3)
+!data/task_ratings_v30.1.csv
+!data/task_ratings_may_2025.csv
+!data/task_ratings_oct_2015.csv
+
+# O*NET physical flags, DWS ratings, Job Zones
+!data/physical_tasks.csv
+!data/dws_ratings.csv
+!data/job_zones_v30.1.csv
+
+# Eloundou et al. exposure labels (Part 2 filter + Part 3 columns)
+!data/full_labelset.tsv
+
+# BLS OEWS wage & employment + projections
+!data/oews_national_2025.csv
+!data/oews_states_2025.csv
+!data/oews_national_2015.csv
+!data/oews_states_2015.csv
+!data/scraped_wage_data.csv
+!data/emp_projections.csv
+
+# SOC structure & crosswalks
+!data/soc_structure_2019.csv
+!data/2010_to_2019_soc_crosswalk.csv
+!data/detailed_occ_2019.csv
+
+# Master pct (used by adjust_emp employment reallocation)
+!data/master_pct_normalized.csv
+
+
+# ---------------------------------------------------------------------------
+# Python / Jupyter / environments
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[codz]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
