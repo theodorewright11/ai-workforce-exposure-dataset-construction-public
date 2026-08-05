@@ -16,12 +16,14 @@ This repository is the reference for how the data was built, how to reproduce it
 
 ### AI Scoring Sources (Inputs)
 
-**Anthropic Economic Index (AEI)** -- Derived from real Claude conversation data. Each O*NET task gets a `pct_normalized` (share of conversations) and `auto_aug_mean` (automatability score, 0--5). Uses O*NET v20.1 (2015) task statements and 2010 SOC codes.
+**Anthropic Economic Index (AEI)** -- Derived from real Claude conversation data. Each O*NET task gets a `pct_normalized` (share of conversations) and `auto_aug_mean` (automatability score, 0--5). v1--v5 use O*NET v20.1 (2015) task statements and 2010 SOC codes. **v6.1/v6.2 (June 2026 release) switched to O*NET v30.1 (2025) task statements and 2019 SOC codes**, and use a new raw schema (`category_name`/`metric_id`/`node_name` instead of `facet`/`variable`/`cluster_name`).
 
 - AEI Conv. v1--v5: Five snapshot versions (Dec 2024 -- present), conversation data only.
 - AEI API v3--v5: Three snapshot versions, API/tool-use interactions only.
-- Input files: `task_pct_v{1..5}.csv`, `task_pct_api_v{3..5}.csv`
-- Auto/aug scores: `automation_vs_augmentation_by_task_v{2..5}.csv`, `automation_vs_augmentation_by_task_api_v{3..5}.csv`
+- AEI Conv./API v6.1 and v6.2: Two monthly snapshots (Apr 2026, May 2026) from the June 2026 release, shipped together in one raw file per platform.
+- Input files: `task_pct_v{1..5}.csv`, `task_pct_api_v{3..5}.csv`, `task_pct_v6_{1,2}.csv`, `task_pct_api_v6_{1,2}.csv` (v6 files are month-filtered from `aei_raw_{claude_ai,1p_api}_2026-04-01_to_2026-06-01.csv`)
+- Auto/aug scores: `automation_vs_augmentation_by_task_v{2..5}.csv`, `automation_vs_augmentation_by_task_api_v{3..5}.csv`, plus `_v6_{1,2}` and `_api_v6_{1,2}` variants
+- v6 caveat: the June 2026 release rounds all values to 2 decimals and ships no conversation counts. Roughly half of the listed tasks round to `pct = 0.00`, and absolute conversation volumes are not recoverable from the files.
 
 **MCP Server Pipeline** -- AI task classifications from Model Context Protocol server logs. Four cumulative versions (Apr 2025 -- Feb 2026). Uses O*NET v30.1 (2025) task statements and 2019 SOC codes.
 
@@ -45,19 +47,20 @@ This repository is the reference for how the data was built, how to reproduce it
 
 All final outputs are saved to `data/final/`. Each row is one task within one occupation.
 
-### Per-Version Datasets (16 files)
+### Per-Version Datasets (19 files)
 
 | Dataset | File | SOC Version |
 |---------|------|-------------|
 | AEI Conv. v1--v5 | `final_aei_v{1..5}.csv` | 2010 |
 | AEI API v3--v5 | `final_aei_api_v{3..5}.csv` | 2010 |
+| AEI Conv. v6.1--v6.2 | `final_aei_v6_{1,2}.csv` | 2019 |
+| AEI API v6.1--v6.2 | `final_aei_api_v6_{1,2}.csv` | 2019 |
 | MCP Cumul. v1--v4 | `final_mcp_v{1..4}.csv` | 2019 |
 | Microsoft | `final_microsoft.csv` | 2019 |
 | ECO 2025 | `final_eco_2025.csv` | 2019 |
-| ECO 2025 (task-property variant) | `final_eco_2025_with_task_properties.csv` | 2019 |
 | ECO 2015 | `final_eco_2015.csv` | 2010 |
 
-### Cumulative Datasets (44 files)
+### Cumulative Datasets (52 files)
 
 Built by combining per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. For overlapping (occupation, task) pairs, `auto_aug_mean` takes the max across sources and `pct_normalized` is summed across sources, after which the dataset is renormalized so unique (occupation, task) pairs sum to 100.
 
@@ -71,8 +74,8 @@ Output naming: `final_{bucket_name}_{end_date}.csv`
 
 | Bucket | Description | Sources | Task Set | Versions |
 |--------|-------------|---------|----------|----------|
-| `all_confirmed_usage` | All confirmed usage | AEI Both + Microsoft | 2025 | 6 (2024-09-30 to 2026-02-12) |
-| `confirmed_human_usage` | Confirmed human usage | AEI Conv + Microsoft | 2025 | 6 (2024-09-30 to 2026-02-12) |
+| `all_confirmed_usage` | All confirmed usage | AEI Both + Microsoft | 2025 | 8 (2024-09-30 to 2026-05-31) |
+| `confirmed_human_usage` | Confirmed human usage | AEI Conv + Microsoft | 2025 | 8 (2024-09-30 to 2026-05-31) |
 | `aei_all_usage` | AEI all confirmed usage | AEI Conv + AEI API | 2015 | 5 (2024-12-23 to 2026-02-12) |
 | `aei_human_usage` | AEI confirmed human usage | AEI Conv only | 2015 | 5 (2024-12-23 to 2026-02-12) |
 | `aei_agentic_usage` | AEI confirmed agentic usage | AEI API only | 2015 | 3 (2025-08-11 to 2026-02-12) |
@@ -81,17 +84,17 @@ Output naming: `final_{bucket_name}_{end_date}.csv`
 
 | Bucket | Description | Sources | Task Set | Versions |
 |--------|-------------|---------|----------|----------|
-| `all_agentic_usage` | All possible agentic usage | MCP + AEI API | 2025 | 7 (2025-04-24 to 2026-02-18) |
-| `aei_agentic_usage_2025` | AEI confirmed agentic, ECO 2025 backbone | AEI API only | 2025 | 1 (latest cumulative date only: 2026-02-12) |
-| `aei_all_usage_2025` | AEI confirmed all usage, ECO 2025 backbone | AEI Conv + AEI API | 2025 | 1 (latest cumulative date only: 2026-02-12) |
+| `all_agentic_usage` | All possible agentic usage | MCP + AEI API | 2025 | 9 (2025-04-24 to 2026-05-31) |
+| `aei_agentic_usage_2025` | AEI confirmed agentic, ECO 2025 backbone | AEI API only | 2025 | 1 (latest cumulative date only: 2026-05-31) |
+| `aei_all_usage_2025` | AEI confirmed all usage, ECO 2025 backbone | AEI Conv + AEI API | 2025 | 1 (latest cumulative date only: 2026-05-31) |
 
 **All bucket:**
 
 | Bucket | Description | Sources | Task Set | Versions |
 |--------|-------------|---------|----------|----------|
-| `all_usage` | All usage potential | AEI Both + MCP + Microsoft | 2025 | 10 (2024-09-30 to 2026-02-18) |
+| `all_usage` | All usage potential | AEI Both + MCP + Microsoft | 2025 | 12 (2024-09-30 to 2026-05-31) |
 
-2025 task set buckets use ECO 2025 as structural backbone. AEI/API sources are filtered to task-occupation pairs that exist in ECO 2025 before combining. 2015 task set buckets use native AEI row structure.
+2025 task set buckets use ECO 2025 as structural backbone. Pre-v6 AEI/API sources are filtered to task-occupation pairs that exist in ECO 2025 before combining; AEI v6.1/v6.2 are native O*NET v30.1 / 2019-SOC sources and match the backbone on `title_current` directly. 2015 task set buckets use native AEI row structure -- **AEI v6.1/v6.2 do not enter the 2015-task-set buckets** (different O*NET vintage), so those buckets end at 2026-02-12.
 
 ### ECO Baseline Datasets (2 files)
 
@@ -156,6 +159,10 @@ The pipeline runs in three parts from a single notebook (`scripts/data_merge.ipy
 | AEI API v3 | 2025-08-11 |
 | AEI API v4 | 2025-11-13 |
 | AEI API v5 | 2026-02-12 |
+| AEI Conv. v6.1 | 2026-04-30 |
+| AEI API v6.1 | 2026-04-30 |
+| AEI Conv. v6.2 | 2026-05-31 |
+| AEI API v6.2 | 2026-05-31 |
 | MCP Cumul. v1 | 2025-04-24 |
 | MCP Cumul. v2 | 2025-05-24 |
 | MCP Cumul. v3 | 2025-07-23 |

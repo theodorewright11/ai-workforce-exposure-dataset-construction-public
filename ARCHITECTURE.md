@@ -14,7 +14,7 @@ ai-workforce-exposure-dataset-construction-public/
 │   └── code_storage.ipynb         # Provenance scripts for committed inputs (not part of the run)
 ├── data/
 │   ├── (root)                     # Raw inputs (committed) + generated intermediate files
-│   ├── final/                     # Final output CSVs (generated: 16 per-version + 44 cumulative = 60)
+│   ├── final/                     # Final output CSVs (generated: 19 per-version + 52 cumulative = 71)
 │   └── merged_data_files/         # Generated intermediate saves
 ├── README.md
 ├── PRD.md
@@ -50,9 +50,11 @@ first_pass_aei_v2.csv          first_pass_aei_api_v4.csv
 first_pass_aei_v3.csv          first_pass_aei_api_v5.csv
 first_pass_aei_v4.csv          first_pass_mcp_v1.csv
 first_pass_aei_v5.csv          first_pass_mcp_v2.csv
-first_pass_microsoft.csv       first_pass_mcp_v3.csv
-first_pass_eco_tasks_2015.csv  first_pass_mcp_v4.csv
-first_pass_eco_tasks_2025.csv
+first_pass_aei_v6_1.csv        first_pass_mcp_v3.csv
+first_pass_aei_v6_2.csv        first_pass_mcp_v4.csv
+first_pass_aei_api_v6_1.csv    first_pass_microsoft.csv
+first_pass_aei_api_v6_2.csv    first_pass_eco_tasks_2015.csv
+                               first_pass_eco_tasks_2025.csv
 ```
 
 Dataset type is auto-detected from the run name:
@@ -61,6 +63,7 @@ Dataset type is auto-detected from the run name:
 - `microsoft_run`: `"microsoft" in run_name`
 - `eco_run_2015` / `eco_run_2025`: exact match
 - `aei_v3_and_up`: AEI runs with v3, v4, or v5 (have auto/aug data from Anthropic)
+- `aei_v6_run`: AEI runs with v6 (new release schema; routed down the MCP/ECO-2025 O*NET v30.1 / 2019-SOC path, not the 2010-SOC AEI path). The `runs_v6` dict maps each v6 run to its raw release file and `date_start` month (v6_1 = 2026-04, v6_2 = 2026-05; both months ship in one raw file per platform).
 
 ### Constants
 
@@ -117,6 +120,12 @@ Four separate code paths depending on dataset type:
 - Loads pre-built `task_pct_eco_{2015,2025}.csv`
 - Maps to appropriate O*NET task statements (v20.1 for 2015, v30.1 for 2025)
 - Crosswalks SOC codes for 2025 version
+
+**AEI v6 path** (`aei_v6_run`, new cell after the ECO 2025 cell):
+- A preprocessing branch (next to the v3+ one) filters the raw release file to `geo_id == "GLOBAL"`, `category_name == "onet"`, `hierarchy_level == 0`, `metric_id == "pct"`, and the run's `date_start` month, writing `task_pct_v6_*.csv` / `task_pct_api_v6_*.csv`
+- The mapping cell mirrors the ECO 2025 cell: merges on **v30.1** task statements (v6 task text is native v30.1, so text match is exact), crosswalks 2019 → 2010 SOC, and emits the MCP/ECO column layout (`title_current`, `soc_code_2019_full`, crosswalked `title`/`soc_code_2010`)
+- Unlike ECO, it then applies the AEI pct treatment from `pct_to_onet_tasks`: divides each task's pct by `n_occurrences` (occupations sharing the task) and renormalizes so unique pairs sum to 100
+- Downstream, v6 runs take the MCP/Microsoft/ECO-2025 branch of every gate (Steps 2--5), including `adjust_emp_new`
 
 ### Step 2: Add SOC Structure
 
@@ -179,9 +188,9 @@ Runs once across all datasets (loads all `first_pass_*.csv` files).
 
 ### Dates & Taxonomy
 
-- Maps each dataset to its snapshot date
-- Merges O*NET DWA/IWA/GWA taxonomy from `tasks_dwa_iwa_gwa_v{20.1,30.1}.csv`
-- Merges physical task flags from `physical_tasks.csv` (sourced from Microsoft's analysis, with DWA majority-rule imputation for unmapped tasks)
+- Maps each dataset to its snapshot date (AEI v6.1 = 2026-04-30, v6.2 = 2026-05-31: the snapshot's `date_end` minus one day)
+- Merges O*NET DWA/IWA/GWA taxonomy from `tasks_dwa_iwa_gwa_v{20.1,30.1}.csv`. AEI v1--v5 use the v20.1 branch (merge on `title_normalized`); **AEI v6 files are excluded from that branch** and take the v30.1 branch (merge on `title_current`), like MCP
+- Merges physical task flags from `physical_tasks.csv` (sourced from Microsoft's analysis, with DWA majority-rule imputation for unmapped tasks). Same v6 routing: pair merge and occupation-majority fallback key on `title_current`, not `title_normalized`
 
 ### Microsoft cleanup cell
 
@@ -203,7 +212,7 @@ Different processing per source:
 
 The previous distribution-based method (mapping each IWA scope through MCP rating distributions binned by scope) is preserved in the cell as a commented-out reference block. It was retired because it heavily compressed Microsoft's task-level distribution, which made Microsoft an uninformative source for the cumulative max where AEI typically dominates.
 
-**AEI v2+**: Loads `automation_vs_augmentation_by_task_*.csv` from Anthropic's data release (v2--v5 conversation, api_v3--api_v5). Standardizes across versions into a single `auto_aug_mean` column.
+**AEI v2+**: Loads `automation_vs_augmentation_by_task_*.csv` from Anthropic's data release (v2--v5 conversation, api_v3--api_v5, plus v6_1/v6_2 and api_v6_1/api_v6_2). Standardizes across versions into a single `auto_aug_mean` column. The v6 collab files are pivoted from the new release schema by `code_storage.ipynb` (per-type `collaboration_*_pct` metrics; the schema has no `not_classified` category, so a 0.0 column is emitted to keep the `empty = none + not_classified` computation working).
 
 **AEI v1**: No auto/aug data available (column stays null).
 
@@ -242,17 +251,19 @@ Nine buckets of cumulative datasets are built, each with one or more time-point 
 
 | Bucket | Sources | Task Set | Versions |
 |--------|---------|----------|----------|
-| `all_confirmed_usage` | AEI Both + Microsoft | 2025 | 6 |
-| `confirmed_human_usage` | AEI Conv + Microsoft | 2025 | 6 |
+| `all_confirmed_usage` | AEI Both + Microsoft | 2025 | 8 |
+| `confirmed_human_usage` | AEI Conv + Microsoft | 2025 | 8 |
 | `aei_all_usage` | AEI Conv + AEI API | 2015 | 5 |
 | `aei_human_usage` | AEI Conv only | 2015 | 5 |
 | `aei_agentic_usage` | AEI API only | 2015 | 3 |
-| `all_agentic_usage` | MCP + AEI API | 2025 | 7 |
+| `all_agentic_usage` | MCP + AEI API | 2025 | 9 |
 | `aei_agentic_usage_2025` | AEI API only | 2025 | 1 (latest date only) |
 | `aei_all_usage_2025` | AEI Conv + AEI API | 2025 | 1 (latest date only) |
-| `all_usage` | AEI Both + MCP + Microsoft | 2025 | 10 |
+| `all_usage` | AEI Both + MCP + Microsoft | 2025 | 12 |
 
 Microsoft is pre-filtered upstream in Part 2 (see §5 "Microsoft cleanup cell"), so any bucket that includes `final_microsoft.csv` inherits that cleanup automatically. There are no bucket-level filter flags or filtered-variant output files.
+
+**AEI v6.1/v6.2 in cumulative builds.** The v6 per-version files (`final_aei_v6_{1,2}.csv`, `final_aei_api_v6_{1,2}.csv`, dates 2026-04-30 and 2026-05-31) are native O*NET v30.1 / 2019-SOC sources. In `build_cumulative_2025` they take the MCP/Microsoft extraction path (`is_aei` excludes `"v6"`): scores are matched on `title_current` directly, with no 2010-SOC title-fix recovery. They join only the 2025-task-set buckets (two new time points each in `all_confirmed_usage`, `confirmed_human_usage` (conv only), `all_agentic_usage` (API only), and `all_usage`); the three 2015-task-set buckets end at 2026-02-12 because v6 does not exist in v20.1 task space. v6 files do count as AEI sources for `_aei_pool_frames`, so in v6-containing builds they contribute to the v1 auto/aug imputation pool wherever their v30.1 DWA/IWA/GWA titles coincide with v20.1 titles.
 
 **AEI v1 auto_aug imputation** (`_impute_aei_v1_auto_aug`):
 
@@ -277,14 +288,14 @@ AEI v1 ships with no auto/aug data (`auto_aug_mean` all null). Before combining,
 - After aggregation, `pct_normalized` is **renormalized** so unique `(title_current, task_normalized)` pairs sum to 100
 - Joins combined scores to ECO 2025 backbone on `(title_current, task_normalized)` for structural columns (DWA/IWA/GWA, SOC 2019 codes, etc.). The inner join is preserved: every recovered row lands on a pair ECO 2025 already contains, so no backbone extension is needed
 
-Total output: 44 cumulative CSV files across all buckets (42 from the main builder + 2 additive files from the supplementary cell that runs immediately after).
+Total output: 52 cumulative CSV files across all buckets (50 from the main builder + 2 additive files from the supplementary cell that runs immediately after).
 
 **Supplementary builds (latest date only, ECO 2025 backbone).** Two files built in a single cell directly after the main cumulative builder, reusing `build_cumulative_2025`, `eco_2025`, `cx_lookup`, `AEI_API`, `AEI_CONV` from that cell:
 
-1. `final_aei_agentic_usage_2025_2026-02-12.csv` — AEI API v3+v4+v5
-2. `final_aei_all_usage_2025_2026-02-12.csv` — AEI Conv v1–v5 + AEI API v3–v5 (v1's `auto_aug_mean` is imputed via `_impute_aei_v1_auto_aug` from the in-build AEI pool)
+1. `final_aei_agentic_usage_2025_2026-05-31.csv` — AEI API v3–v5 + v6.1/v6.2
+2. `final_aei_all_usage_2025_2026-05-31.csv` — AEI Conv v1–v5 + v6.1/v6.2 + AEI API v3–v5 + v6.1/v6.2 (v1's `auto_aug_mean` is imputed via `_impute_aei_v1_auto_aug` from the in-build AEI pool)
 
-Both go through standard text-match + 2010-SOC title-fix recovery into the ECO 2025 task space. Picked up automatically by downstream Eloundu and column-reorder cells via the `final_*.csv` glob (filenames contain `_usage_`, so they get cumulative column-reorder treatment).
+Pre-v6 sources go through standard text-match + 2010-SOC title-fix recovery into the ECO 2025 task space; v6 sources match on `title_current` directly (and are skipped by the cell's 2010-title task-loss diagnostic, which doesn't apply to them). Picked up automatically by downstream Eloundu and column-reorder cells via the `final_*.csv` glob (filenames contain `_usage_`, so they get cumulative column-reorder treatment).
 
 ### Job Zones
 
@@ -343,10 +354,12 @@ Output: `third_pass_*.csv` -> copied to `final/final_*.csv`
 |-------------|--------|-------|
 | `task_pct_v{1..5}.csv` | AEI conversation snapshots | v1--v2 use original format, v3+ use GLOBAL/onet_task format |
 | `task_pct_api_v{3..5}.csv` | AEI API snapshots | Same format as v3+ conversation |
+| `task_pct_v6_{1,2}.csv`, `task_pct_api_v6_{1,2}.csv` | AEI v6 snapshots | Month-filtered from the June 2026 release raw files (new schema) |
+| `aei_raw_{claude_ai,1p_api}_2026-04-01_to_2026-06-01.csv` | AEI v6 raw release | One file per platform, two monthly snapshots each (2026-04, 2026-05). The claude_ai file (219MB) exceeds GitHub's limit and is not committed |
 | `task_pct_eco_{2015,2025}.csv` | ECO baselines | Pre-built task percentages (all zeros for pct/auto_aug) |
 | `task_results_{date}.csv` | MCP server pipeline | Dates: 2025-04-24, 2025-05-24, 2025-07-23, 2026-02-18 |
 | `iwa_metrics.csv` | Microsoft Copilot analysis | IWA-level metrics |
-| `automation_vs_augmentation_by_task_*.csv` | AEI auto/aug scores | Separate files for v2, v3, v4, v5, api_v3, api_v4, api_v5 |
+| `automation_vs_augmentation_by_task_*.csv` | AEI auto/aug scores | Separate files for v2, v3, v4, v5, api_v3, api_v4, api_v5, v6_1, v6_2, api_v6_1, api_v6_2 |
 
 ### O*NET Reference
 
@@ -386,7 +399,7 @@ Output: `third_pass_*.csv` -> copied to `final/final_*.csv`
 | First pass | `first_pass_*.csv` | After Part 1 (Pct, emp, wage) |
 | Second pass | `second_pass_*.csv` | After Part 2 (taxonomy + auto/aug) |
 | Third pass | `third_pass_*.csv` | After Part 3 (ratings) |
-| Final | `final/final_*.csv` | After cumulative build, dws ratings, column reorder (16 per-version + 44 cumulative = 60) |
+| Final | `final/final_*.csv` | After cumulative build, dws ratings, column reorder (19 per-version + 52 cumulative = 71) |
 
 All intermediate files are saved to `data/` root. Final files go to `data/final/`.
 
@@ -399,7 +412,7 @@ All intermediate files are saved to `data/` root. Final files go to `data/final/
 Provenance scripts. Not part of the pipeline. Contains the one-off scripts that produced several committed inputs:
 
 - Physical metric extraction: merges Microsoft physical flags into O*NET taxonomy file
-- Collaboration pattern extraction: pivots AEI raw data into collaboration type columns (directive, feedback loop, learning, task iteration, validation)
+- Collaboration pattern extraction: pivots AEI raw data into collaboration type columns (directive, feedback loop, learning, task iteration, validation). Two cells: one for the v3–v5 raw schema, one for the v6+ release schema (per-month filtering, adds a zero `not_classified` column)
 - ECO percentage creation: builds `task_pct_eco_{2015,2025}.csv` from O*NET task statements
 - Master title normalization: aggregates pct_normalized across AEI versions into `master_pct_normalized.csv`
 
@@ -427,8 +440,10 @@ Provenance scripts. Not part of the pipeline. Contains the one-off scripts that 
 
 10. **Microsoft taxonomy inner-merge.** The final taxonomy merge in the Microsoft cell is `how='inner'` on `norm_iwa_title`, and must stay inner. With `how='left'`, taxonomy rows for filtered-out IWAs (share < 0.0005) return with NaN `impact_scope_*`, and Part 2's `iwa_agg.apply(compute_stats, ...)` raises `ValueError: cannot convert float NaN to integer` when `find_matching_bin` hits `int(NaN / 0.05)`.
 
-11. **Renormalize after any row-level filter on Microsoft.** Part 2's Microsoft cleanup cell drops rows for two reasons (physical-under-AI-dominant-IWA, Eloundou E0+E0). Survivors retain pre-drop `pct_normalized` magnitudes, so the unique-pair sum falls below 100. The cell rescales `pct *= 100 / current_unique_pair_sum` so the invariant holds going into cumulative builds. Any future row-level filter on Microsoft must do the same; `scripts/check_pct_normalized.ipynb` will catch a missed rescale.
+11. **Renormalize after any row-level filter on Microsoft.** Part 2's Microsoft cleanup cell drops rows for two reasons (physical-under-AI-dominant-IWA, Eloundou E0+E0). Survivors retain pre-drop `pct_normalized` magnitudes, so the unique-pair sum falls below 100. The cell rescales `pct *= 100 / current_unique_pair_sum` so the invariant holds going into cumulative builds. Any future row-level filter on Microsoft must do the same.
 
 12. **AEI title-fix recovery must not inject synthetic pairs.** `_recover_aei_via_title_fix()` only emits rows where `(crosswalked_title_current, task_normalized)` is already a pair in the ECO 2025 backbone, which keeps the final `eco_base.merge(..., how="inner")` an inner join. Loosening this filter to keep crosswalk targets whose pair does not yet exist in ECO 2025 would require either (a) extending the backbone in-memory with skeleton rows filled from task-level and occupation-level reference tables, or (b) switching the final merge to `left`/`outer` and supplying the structural columns. The additional pct mass recovered that way is negligible.
 
 13. **AEI v1 has no auto/aug; cumulative builds impute it.** v1's `auto_aug_mean` is null in the per-version file. Cumulative builds fill v1-exclusive tasks via a DWA→IWA→GWA mean over the other AEI sources in the build (`_impute_aei_v1_auto_aug`). Two invariants must hold: (a) impute **only v1-exclusive** pairs, since imputing a shared task lets an imputed mean beat the real v2–v5 score in the `max` combine; (b) impute in **native v20.1 space**, before the title-fix crosswalk, so DWA/IWA/GWA strings match the pool (v20.1 and v30.1 DWA titles diverge). v1-exclusive tasks with no work-activity mapping are dropped.
+
+14. **AEI v6 is a different vintage and format — never route it down the 2010-SOC AEI path.** The June 2026 release switched to O*NET v30.1 task statements and 2019 SOC codes, and to a new raw schema (`category_name`/`hierarchy_level`/`metric_id`/`node_name`; collaboration lives in per-type `collaboration_*_pct` metrics with no `not_classified` category). Feeding v6 through `pct_to_onet_tasks` against v20.1 statements silently drops ~13–22% of tasks and misattributes the rest, so v6 runs use their own Part 1 branch and take the MCP/ECO-2025 gates everywhere (`aei_v6_run`; the run-type checks that string-match `"aei"` in filenames must exclude `"v6"`). v6 stays out of the 2015-task-set cumulative buckets. Also note: v6 values are rounded to 2 decimals and ship no conversation counts — roughly half of listed tasks have `pct = 0.00` (kept as zero-share rows), and the lost precision is redistributed by renormalization; absolute volumes are not recoverable.

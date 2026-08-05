@@ -17,9 +17,13 @@ data/merged_data_files/*
 
 # --- Raw inputs used by scripts/data_merge.ipynb (allowlisted) ---
 
-# AEI task percentages -- v1/v2 inputs (Part 1)
+# AEI task percentages -- v1/v2 inputs (Part 1); v6+ are month-filtered
+# intermediates derived from the raw release files (committed like v3-v5's
+# task_pct files for convenience)
 !data/task_pct_v[1-5].csv
 !data/task_pct_api_v[3-5].csv
+!data/task_pct_v6_[12].csv
+!data/task_pct_api_v6_[12].csv
 
 # AEI raw conversation/API data -- v3+ inputs (Part 1)
 !data/aei_raw_claude_ai_2025-08-04_to_2025-08-11.csv
@@ -29,9 +33,21 @@ data/merged_data_files/*
 !data/aei_raw_claude_ai_2026-02-05_to_2026-02-12.csv
 !data/aei_raw_1p_api_2026-02-05_to_2026-02-12.csv
 
+# AEI v6 raw data (June 2026 release format; one file per platform covering the
+# 2026-04 and 2026-05 monthly snapshots)
+!data/aei_raw_1p_api_2026-04-01_to_2026-06-01.csv
+# EXCLUDED: aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv (219MB) exceeds
+# GitHub's 100MB per-file limit. Download aei_claude_ai_2026-06-26.csv from
+# https://huggingface.co/datasets/Anthropic/EconomicIndex/tree/main/release_2026_06_26/data
+# rename it to aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv, and place it in
+# data/ before running the v6 conversation pipeline.
+# data/aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv
+
 # AEI auto/aug scores (Part 2)
 !data/automation_vs_augmentation_by_task_v[2-5].csv
 !data/automation_vs_augmentation_by_task_api_v[3-5].csv
+!data/automation_vs_augmentation_by_task_v6_[12].csv
+!data/automation_vs_augmentation_by_task_api_v6_[12].csv
 
 # MCP task results (Part 1)
 !data/task_results_2025-04-24.csv

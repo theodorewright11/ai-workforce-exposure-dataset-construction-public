@@ -16,9 +16,10 @@ It takes raw data from multiple AI scoring sources (Anthropic Economic Index, MC
 
 ---
 
-All raw input data is included in this repository except for one file that exceeds GitHub's 100MB file size limit: **`mcp_results_2026-02-18.csv`** (186MB). Download it from Hugging Face and place it in the `data/` directory before running the pipeline:
+All raw input data is included in this repository except for two files that exceed GitHub's 100MB file size limit. Download them and place them in the `data/` directory before running the pipeline:
 
-https://huggingface.co/datasets/theodorewright11/mcp-onet-task-classification-public
+- **`mcp_results_2026-02-18.csv`** (186MB) from https://huggingface.co/datasets/theodorewright11/mcp-onet-task-classification-public
+- **`aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv`** (219MB, AEI v6 conversation raw) from https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2026_06_26/data/aei_claude_ai_2026-06-26.csv — rename the downloaded `aei_claude_ai_2026-06-26.csv` to the name above (only needed for the AEI v6 conversation runs; the month-filtered `task_pct_v6_{1,2}.csv` intermediates it produces are committed)
 
 ---
 
@@ -68,6 +69,8 @@ External inputs and where they come from. **[ARCHITECTURE.md §7](ARCHITECTURE.m
 | `aei_raw_1p_api_2025-08-04_to_2025-08-11.csv` | AEI API v3 raw snapshot | https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2025_09_15/data/intermediate/aei_raw_1p_api_2025-08-04_to_2025-08-11.csv |
 | `aei_raw_1p_api_2025-11-13_to_2025-11-20.csv` | AEI API v4 raw snapshot | https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2026_01_15/data/intermediate/aei_raw_1p_api_2025-11-13_to_2025-11-20.csv |
 | `aei_raw_1p_api_2026-02-05_to_2026-02-12.csv` | AEI API v5 raw snapshot | https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2026_03_24/data/aei_raw_1p_api_2026-02-05_to_2026-02-12.csv |
+| `aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv` (not committed; 219 MB; released as `aei_claude_ai_2026-06-26.csv`) | AEI conversation v6 raw (June 2026 release, new schema; Apr + May 2026 monthly snapshots in one file) | https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2026_06_26/data/aei_claude_ai_2026-06-26.csv |
+| `aei_raw_1p_api_2026-04-01_to_2026-06-01.csv` (released as `aei_1p_api_2026-06-26.csv`) | AEI API v6 raw (June 2026 release, new schema; Apr + May 2026 monthly snapshots in one file) | https://huggingface.co/datasets/Anthropic/EconomicIndex/blob/main/release_2026_06_26/data/aei_1p_api_2026-06-26.csv |
 
 ### Microsoft Copilot
 
@@ -127,26 +130,30 @@ The O\*NET technology-skills, skills, knowledge, and abilities files are **not**
 
 ## Output Datasets
 
-Running the pipeline writes 16 per-version datasets and 44 cumulative datasets (60 total) to `data/final/`. Each row is one task within one occupation.
+Running the pipeline writes 19 per-version datasets and 52 cumulative datasets (71 total) to `data/final/`. Each row is one task within one occupation.
 
 `data/final/` is generated output and is not committed to this repo. The finished datasets are hosted on HuggingFace:
 
 https://huggingface.co/datasets/theodorewright11/ai-workforce-exposure-datasets-public
 
-### Per-Version (16 files)
+### Per-Version (19 files)
 
 | Dataset | File |
 |---------|------|
 | AEI Conv. v1--v5 | `final_aei_v{1..5}.csv` |
 | AEI API v3--v5 | `final_aei_api_v{3..5}.csv` |
+| AEI Conv. v6.1--v6.2 | `final_aei_v6_{1,2}.csv` |
+| AEI API v6.1--v6.2 | `final_aei_api_v6_{1,2}.csv` |
 | MCP Cumul. v1--v4 | `final_mcp_v{1..4}.csv` |
 | Microsoft | `final_microsoft.csv` |
 | ECO 2025 | `final_eco_2025.csv` |
 | ECO 2015 | `final_eco_2015.csv` |
 
-The 16th per-version file is `final_eco_2025_with_task_properties.csv` (ECO 2025 with extra task-property columns).
+The task-property column (`task_prop`) is merged directly into `final_eco_2025.csv`; there is no separate task-property variant file.
 
-### Cumulative (44 files)
+AEI v6.1/v6.2 (June 2026 release, Apr/May 2026 monthly snapshots) use O\*NET v30.1 task statements and 2019 SOC codes, unlike v1--v5 (v20.1 / 2010 SOC).
+
+### Cumulative (52 files)
 
 Cumulative datasets combine per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. Combining logic for overlapping (occupation, task) pairs: `auto_aug_mean` takes the **max** across sources; `pct_normalized` is **summed** across sources, then the whole dataset is **renormalized** so unique (occupation, task) pairs sum to 100. (The per-version files already sum to 100 on their own.) See [ARCHITECTURE.md](ARCHITECTURE.md) §6 and Pitfall #5 for why both the sum and the rescale are required.
 
@@ -154,17 +161,17 @@ Output naming: `final_{bucket_name}_{end_date}.csv`
 
 | Bucket | Description | Sources | Task Set | Versions |
 |--------|-------------|---------|----------|----------|
-| `all_confirmed_usage` | All confirmed usage | AEI Both + Microsoft | 2025 | 6 |
-| `confirmed_human_usage` | Confirmed human usage | AEI Conv + Microsoft | 2025 | 6 |
+| `all_confirmed_usage` | All confirmed usage | AEI Both + Microsoft | 2025 | 8 |
+| `confirmed_human_usage` | Confirmed human usage | AEI Conv + Microsoft | 2025 | 8 |
 | `aei_all_usage` | AEI all confirmed usage | AEI Conv + AEI API | 2015 | 5 |
 | `aei_human_usage` | AEI confirmed human usage | AEI Conv only | 2015 | 5 |
 | `aei_agentic_usage` | AEI confirmed agentic usage | AEI API only | 2015 | 3 |
-| `all_agentic_usage` | All possible agentic usage | MCP + AEI API | 2025 | 7 |
+| `all_agentic_usage` | All possible agentic usage | MCP + AEI API | 2025 | 9 |
 | `aei_agentic_usage_2025` | AEI confirmed agentic, ECO 2025 backbone | AEI API only | 2025 | 1 |
 | `aei_all_usage_2025` | AEI confirmed all usage, ECO 2025 backbone | AEI Conv + AEI API | 2025 | 1 |
-| `all_usage` | All usage potential | AEI Both + MCP + Microsoft | 2025 | 10 |
+| `all_usage` | All usage potential | AEI Both + MCP + Microsoft | 2025 | 12 |
 
-2025 task set buckets use ECO 2025 as structural backbone (DWA/IWA/GWA, `title_current`, SOC 2019 codes). AEI sources match their `title` (2010 SOC) against ECO 2025's `title_current` (2019 SOC). 2015 task set buckets use native AEI row structure.
+2025 task set buckets use ECO 2025 as structural backbone (DWA/IWA/GWA, `title_current`, SOC 2019 codes). Pre-v6 AEI sources match their `title` (2010 SOC) against ECO 2025's `title_current` (2019 SOC); AEI v6.1/v6.2 are native 2019-SOC sources and match on `title_current` directly. 2015 task set buckets use native AEI row structure and do not include AEI v6 (different O\*NET vintage), so they end at 2026-02-12.
 
 ---
 
@@ -210,8 +217,9 @@ The pipeline is a single notebook, `scripts/data_merge.ipynb`, run in three part
 
 **0. Setup.**
 - `pip install -r requirements.txt`
-- Download the one large input not in this repo (186 MB, over GitHub's per-file limit) and place it in `data/`:
-  `mcp_results_2026-02-18.csv` from <https://huggingface.co/datasets/theodorewright11/mcp-onet-task-classification-public>
+- Download the two large inputs not in this repo (over GitHub's per-file limit) and place them in `data/`:
+  - `mcp_results_2026-02-18.csv` (186 MB) from <https://huggingface.co/datasets/theodorewright11/mcp-onet-task-classification-public>
+  - `aei_raw_claude_ai_2026-04-01_to_2026-06-01.csv` (219 MB) from <https://huggingface.co/datasets/Anthropic/EconomicIndex> (needed for the `first_pass_aei_v6_1` / `first_pass_aei_v6_2` conversation runs)
 - The empty `data/final/` and `data/merged_data_files/` directories are tracked (via `.gitkeep`) so the notebook can write into them on a fresh clone.
 
 **1. Part 1 — run once per dataset.** Set the `run_name` variable at the top of Part 1 to each value below in turn and execute Part 1's cells, producing one `first_pass_*.csv` each time:
@@ -220,9 +228,10 @@ The pipeline is a single notebook, `scripts/data_merge.ipynb`, run in three part
 first_pass_aei_v1.csv          first_pass_aei_api_v3.csv      first_pass_mcp_v1.csv
 first_pass_aei_v2.csv          first_pass_aei_api_v4.csv      first_pass_mcp_v2.csv
 first_pass_aei_v3.csv          first_pass_aei_api_v5.csv      first_pass_mcp_v3.csv
-first_pass_aei_v4.csv          first_pass_microsoft.csv       first_pass_mcp_v4.csv
-first_pass_aei_v5.csv          first_pass_eco_tasks_2015.csv
-                               first_pass_eco_tasks_2025.csv
+first_pass_aei_v4.csv          first_pass_aei_api_v6_1.csv    first_pass_mcp_v4.csv
+first_pass_aei_v5.csv          first_pass_aei_api_v6_2.csv    first_pass_microsoft.csv
+first_pass_aei_v6_1.csv        first_pass_eco_tasks_2015.csv
+first_pass_aei_v6_2.csv        first_pass_eco_tasks_2025.csv
 ```
 
 `master_pct_normalized.csv` is consumed by Part 1 (employment reallocation) but was itself built from Part 1 outputs (see `scripts/code_storage.ipynb`). It is committed as a fixed artifact to break that circular dependency. Use the committed copy; do not regenerate it.
