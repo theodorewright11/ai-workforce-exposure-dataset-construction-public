@@ -155,7 +155,7 @@ AEI v6.1/v6.2 (June 2026 release, Apr/May 2026 monthly snapshots) use O\*NET v30
 
 ### Cumulative (52 files)
 
-Cumulative datasets combine per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. Combining logic for overlapping (occupation, task) pairs: `auto_aug_mean` takes the **max** across sources; `pct_normalized` is **summed** across sources, then the whole dataset is **renormalized** so unique (occupation, task) pairs sum to 100. (The per-version files already sum to 100 on their own.) See [ARCHITECTURE.md](ARCHITECTURE.md) §6 and Pitfall #5 for why both the sum and the rescale are required.
+Cumulative datasets combine per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. Combining logic for overlapping (occupation, task) pairs: `auto_aug_mean` takes the **mean** across contributing source versions (nulls skipped); `pct_normalized` is **summed** across sources, then the whole dataset is **renormalized** so unique (occupation, task) pairs sum to 100. (The per-version files already sum to 100 on their own.) See [ARCHITECTURE.md](ARCHITECTURE.md) §6 and Pitfall #5 for why both the sum and the rescale are required.
 
 Output naming: `final_{bucket_name}_{end_date}.csv`
 

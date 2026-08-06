@@ -62,7 +62,7 @@ All final outputs are saved to `data/final/`. Each row is one task within one oc
 
 ### Cumulative Datasets (52 files)
 
-Built by combining per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. For overlapping (occupation, task) pairs, `auto_aug_mean` takes the max across sources and `pct_normalized` is summed across sources, after which the dataset is renormalized so unique (occupation, task) pairs sum to 100.
+Built by combining per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. For overlapping (occupation, task) pairs, `auto_aug_mean` is averaged across all contributing source versions (nulls skipped) and `pct_normalized` is summed across sources, after which the dataset is renormalized so unique (occupation, task) pairs sum to 100.
 
 Microsoft is pre-cleaned upstream (Part 2 cleanup cell): physical rows under AI-dominant 2x IWAs and Eloundou-E0-on-both-sides rows are dropped. Cumulative buckets that include Microsoft inherit this cleanup automatically.
 
