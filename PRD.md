@@ -23,7 +23,7 @@ This repository is the reference for how the data was built, how to reproduce it
 - AEI Conv./API v6.1 and v6.2: Two monthly snapshots (Apr 2026, May 2026) from the June 2026 release, shipped together in one raw file per platform.
 - Input files: `task_pct_v{1..5}.csv`, `task_pct_api_v{3..5}.csv`, `task_pct_v6_{1,2}.csv`, `task_pct_api_v6_{1,2}.csv` (v6 files are month-filtered from `aei_raw_{claude_ai,1p_api}_2026-04-01_to_2026-06-01.csv`)
 - Auto/aug scores: `automation_vs_augmentation_by_task_v{2..5}.csv`, `automation_vs_augmentation_by_task_api_v{3..5}.csv`, plus `_v6_{1,2}` and `_api_v6_{1,2}` variants
-- v6 caveat: the June 2026 release rounds all values to 2 decimals and ships no conversation counts. Roughly half of the listed tasks round to `pct = 0.00`, and absolute conversation volumes are not recoverable from the files.
+- v6 caveat: the June 2026 release rounds all values to 2 decimals and ships no conversation counts, so absolute conversation volumes are not recoverable and roughly half of the listed tasks arrive at `pct = 0.00`. Those zeros mean "observed, but below the reporting precision", not "unused": AEI only lists a task once it clears a suppression floor of 15 observations per 1,000,000, so a `0.00` is censored into `[0.0015, 0.005)`. The pipeline fills them with 0.0027 — the mean of that interval measured from v5, which reports it uncensored — so v6's low-usage tail stays comparable with earlier versions instead of dropping to zero at the format change. See ARCHITECTURE.md §3 and §10 pitfall 14.
 
 **MCP Server Pipeline** -- AI task classifications from Model Context Protocol server logs. Four cumulative versions (Apr 2025 -- Feb 2026). Uses O*NET v30.1 (2025) task statements and 2019 SOC codes.
 
@@ -60,7 +60,7 @@ All final outputs are saved to `data/final/`. Each row is one task within one oc
 | ECO 2025 | `final_eco_2025.csv` | 2019 |
 | ECO 2015 | `final_eco_2015.csv` | 2010 |
 
-### Cumulative Datasets (52 files)
+### Cumulative Datasets (69 files)
 
 Built by combining per-version datasets across sources. For each bucket, a new cumulative version is produced each time a new dataset arrives chronologically. For overlapping (occupation, task) pairs, `auto_aug_mean` is averaged across all contributing source versions (nulls skipped) and `pct_normalized` is summed across sources, after which the dataset is renormalized so unique (occupation, task) pairs sum to 100.
 
@@ -76,17 +76,20 @@ Output naming: `final_{bucket_name}_{end_date}.csv`
 |--------|-------------|---------|----------|----------|
 | `all_confirmed_usage` | All confirmed usage | AEI Both + Microsoft | 2025 | 8 (2024-09-30 to 2026-05-31) |
 | `confirmed_human_usage` | Confirmed human usage | AEI Conv + Microsoft | 2025 | 8 (2024-09-30 to 2026-05-31) |
-| `aei_all_usage` | AEI all confirmed usage | AEI Conv + AEI API | 2015 | 5 (2024-12-23 to 2026-02-12) |
-| `aei_human_usage` | AEI confirmed human usage | AEI Conv only | 2015 | 5 (2024-12-23 to 2026-02-12) |
-| `aei_agentic_usage` | AEI confirmed agentic usage | AEI API only | 2015 | 3 (2025-08-11 to 2026-02-12) |
+| `aei_all_usage_eco2015` | AEI all confirmed usage | AEI Conv + AEI API | 2015 | 5 (2024-12-23 to 2026-02-12) |
+| `aei_human_usage_eco2015` | AEI confirmed human usage | AEI Conv only | 2015 | 5 (2024-12-23 to 2026-02-12) |
+| `aei_agentic_usage_eco2015` | AEI confirmed agentic usage | AEI API only | 2015 | 3 (2025-08-11 to 2026-02-12) |
+| `aei_all_usage_eco2025` | AEI all confirmed usage | AEI Conv + AEI API | 2025 | 7 (2024-12-23 to 2026-05-31) |
+| `aei_human_usage_eco2025` | AEI confirmed human usage | AEI Conv only | 2025 | 7 (2024-12-23 to 2026-05-31) |
+| `aei_agentic_usage_eco2025` | AEI confirmed agentic usage | AEI API only | 2025 | 5 (2025-08-11 to 2026-05-31) |
+
+The three AEI-only buckets ship in both task spaces. `_eco2015` preserves the native O*NET v20.1 structure used for work-activity analysis and ends at 2026-02-12, since AEI v6 cannot be expressed in v20.1 task space. `_eco2025` carries the same sources onto the ECO 2025 backbone, which admits v6.1/v6.2 and extends the series to 2026-05-31.
 
 **Agentic bucket:**
 
 | Bucket | Description | Sources | Task Set | Versions |
 |--------|-------------|---------|----------|----------|
 | `all_agentic_usage` | All possible agentic usage | MCP + AEI API | 2025 | 9 (2025-04-24 to 2026-05-31) |
-| `aei_agentic_usage_2025` | AEI confirmed agentic, ECO 2025 backbone | AEI API only | 2025 | 1 (latest cumulative date only: 2026-05-31) |
-| `aei_all_usage_2025` | AEI confirmed all usage, ECO 2025 backbone | AEI Conv + AEI API | 2025 | 1 (latest cumulative date only: 2026-05-31) |
 
 **All bucket:**
 

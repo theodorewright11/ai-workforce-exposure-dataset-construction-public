@@ -14,7 +14,7 @@ ai-workforce-exposure-dataset-construction-public/
 │   └── code_storage.ipynb         # Provenance scripts for committed inputs (not part of the run)
 ├── data/
 │   ├── (root)                     # Raw inputs (committed) + generated intermediate files
-│   ├── final/                     # Final output CSVs (generated: 19 per-version + 52 cumulative = 71)
+│   ├── final/                     # Final output CSVs (generated: 19 per-version + 69 cumulative = 88)
 │   └── merged_data_files/         # Generated intermediate saves
 ├── README.md
 ├── PRD.md
@@ -71,7 +71,14 @@ Dataset type is auto-detected from the run name:
 frequency_weights = {1: 1/260, 2: 4/260, 3: 24/260, 4: 104/260, 5: 1, 6: 3, 7: 8}
 jan_2020_inflation_factor = 1.24   # scraped wages to present value
 may_2015_inflation_factor = 1.36   # 2015 BLS wages to present value
+aei_v6_censored_pct_fill = 0.0027  # fill for v6 pct values censored to 0.00 by rounding
 ```
+
+`aei_v6_censored_pct_fill` is measured, not chosen. AEI suppresses tasks below 15
+obs per 1,000,000 (`onet_task_count` bottoms out at exactly 15 in every v3–v5 raw
+file, both platforms), and v6 rounds `pct` to 2 decimals — so a v6 `0.00` is
+censored into `[0.0015, 0.005)`, not unobserved. v5 reports that interval
+uncensored; its mean is 0.0027. See §10 pitfall 14.
 
 `frequency_weights` is defined twice in `data_merge.ipynb`: an earlier constants
 cell (`{2: 3/260, 3: 48/260, 4: 130/260, 7: 12}`) and a later cell that redefines it
@@ -123,6 +130,7 @@ Four separate code paths depending on dataset type:
 
 **AEI v6 path** (`aei_v6_run`, new cell after the ECO 2025 cell):
 - A preprocessing branch (next to the v3+ one) filters the raw release file to `geo_id == "GLOBAL"`, `category_name == "onet"`, `hierarchy_level == 0`, `metric_id == "pct"`, and the run's `date_start` month, writing `task_pct_v6_*.csv` / `task_pct_api_v6_*.csv`
+- The same branch then replaces every `pct == 0` with `aei_v6_censored_pct_fill` (0.0027). These rows are rounding-censored, not unobserved (§3), and leaving them at zero would collapse v6's entire low-usage tail relative to v5 across the format change. The fill is applied before the `n_occurrences` division and before renormalization, so it is rescaled along with everything else
 - The mapping cell mirrors the ECO 2025 cell: merges on **v30.1** task statements (v6 task text is native v30.1, so text match is exact), crosswalks 2019 → 2010 SOC, and emits the MCP/ECO column layout (`title_current`, `soc_code_2019_full`, crosswalked `title`/`soc_code_2010`)
 - Unlike ECO, it then applies the AEI pct treatment from `pct_to_onet_tasks`: divides each task's pct by `n_occurrences` (occupations sharing the task) and renormalizes so unique pairs sum to 100
 - Downstream, v6 runs take the MCP/Microsoft/ECO-2025 branch of every gate (Steps 2--5), including `adjust_emp_new`
@@ -253,13 +261,24 @@ Nine buckets of cumulative datasets are built, each with one or more time-point 
 |--------|---------|----------|----------|
 | `all_confirmed_usage` | AEI Both + Microsoft | 2025 | 8 |
 | `confirmed_human_usage` | AEI Conv + Microsoft | 2025 | 8 |
-| `aei_all_usage` | AEI Conv + AEI API | 2015 | 5 |
-| `aei_human_usage` | AEI Conv only | 2015 | 5 |
-| `aei_agentic_usage` | AEI API only | 2015 | 3 |
+| `aei_all_usage_eco2015` | AEI Conv + AEI API | 2015 | 5 |
+| `aei_human_usage_eco2015` | AEI Conv only | 2015 | 5 |
+| `aei_agentic_usage_eco2015` | AEI API only | 2015 | 3 |
+| `aei_all_usage_eco2025` | AEI Conv + AEI API | 2025 | 7 |
+| `aei_human_usage_eco2025` | AEI Conv only | 2025 | 7 |
+| `aei_agentic_usage_eco2025` | AEI API only | 2025 | 5 |
 | `all_agentic_usage` | MCP + AEI API | 2025 | 9 |
-| `aei_agentic_usage_2025` | AEI API only | 2025 | 1 (latest date only) |
-| `aei_all_usage_2025` | AEI Conv + AEI API | 2025 | 1 (latest date only) |
 | `all_usage` | AEI Both + MCP + Microsoft | 2025 | 12 |
+
+The three AEI-only buckets ship in **both** task spaces. `_eco2015` keeps the
+native v20.1 row structure (needed for work-activity analysis) and necessarily
+ends at 2026-02-12, since v6 cannot be expressed in v20.1 task space. `_eco2025`
+carries the same sources onto the ECO 2025 backbone, which lets v6.1/v6.2 join
+and extends the series to 2026-05-31. Moving pre-v6 sources across costs ~10% of
+their pairs and ~15% of their pct mass (tasks reworded or retired between O*NET
+vintages); v6 adds considerably more than that back. The explicit suffix replaces
+the older `aei_*_usage_2025_<date>` naming, where the task-set marker was
+indistinguishable from a snapshot date.
 
 Microsoft is pre-filtered upstream in Part 2 (see §5 "Microsoft cleanup cell"), so any bucket that includes `final_microsoft.csv` inherits that cleanup automatically. There are no bucket-level filter flags or filtered-variant output files.
 
@@ -289,14 +308,13 @@ AEI v1 ships with no auto/aug data (`auto_aug_mean` all null). Before combining,
 - After aggregation, `pct_normalized` is **renormalized** so unique `(title_current, task_normalized)` pairs sum to 100
 - Joins combined scores to ECO 2025 backbone on `(title_current, task_normalized)` for structural columns (DWA/IWA/GWA, SOC 2019 codes, etc.). The inner join is preserved: every recovered row lands on a pair ECO 2025 already contains, so no backbone extension is needed
 
-Total output: 52 cumulative CSV files across all buckets (50 from the main builder + 2 additive files from the supplementary cell that runs immediately after).
+Total output: 69 cumulative CSV files, all from the main builder.
 
-**Supplementary builds (latest date only, ECO 2025 backbone).** Two files built in a single cell directly after the main cumulative builder, reusing `build_cumulative_2025`, `eco_2025`, `cx_lookup`, `AEI_API`, `AEI_CONV` from that cell:
-
-1. `final_aei_agentic_usage_2025_2026-05-31.csv` — AEI API v3–v5 + v6.1/v6.2
-2. `final_aei_all_usage_2025_2026-05-31.csv` — AEI Conv v1–v5 + v6.1/v6.2 + AEI API v3–v5 + v6.1/v6.2 (v1's `auto_aug_mean` is imputed via `_impute_aei_v1_auto_aug` from the in-build AEI pool)
-
-Pre-v6 sources go through standard text-match + 2010-SOC title-fix recovery into the ECO 2025 task space; v6 sources match on `title_current` directly (and are skipped by the cell's 2010-title task-loss diagnostic, which doesn't apply to them). Picked up automatically by downstream Eloundu and column-reorder cells via the `final_*.csv` glob (filenames contain `_usage_`, so they get cumulative column-reorder treatment).
+**Task-loss diagnostic.** The cell after the builder reports, per `_eco2025` AEI
+bucket, how much of the pre-v6 input survives the move onto the ECO 2025 backbone
+(direct text match / title-fix recovered / lost, plus pct mass kept). It writes no
+files. v6 sources are excluded: they match `title_current` directly and never take
+the 2010-SOC title-fix path.
 
 ### Job Zones
 
@@ -400,7 +418,7 @@ Output: `third_pass_*.csv` -> copied to `final/final_*.csv`
 | First pass | `first_pass_*.csv` | After Part 1 (Pct, emp, wage) |
 | Second pass | `second_pass_*.csv` | After Part 2 (taxonomy + auto/aug) |
 | Third pass | `third_pass_*.csv` | After Part 3 (ratings) |
-| Final | `final/final_*.csv` | After cumulative build, dws ratings, column reorder (19 per-version + 52 cumulative = 71) |
+| Final | `final/final_*.csv` | After cumulative build, dws ratings, column reorder (19 per-version + 69 cumulative = 88) |
 
 All intermediate files are saved to `data/` root. Final files go to `data/final/`.
 
@@ -447,4 +465,6 @@ Provenance scripts. Not part of the pipeline. Contains the one-off scripts that 
 
 13. **AEI v1 has no auto/aug; cumulative builds impute it.** v1's `auto_aug_mean` is null in the per-version file. Cumulative builds fill v1-exclusive tasks via a DWA→IWA→GWA mean over the other AEI sources in the build (`_impute_aei_v1_auto_aug`). Two invariants must hold: (a) impute **only v1-exclusive** pairs, since imputing a shared task would let an imputed value dilute the real v2–v5 scores in the cross-source mean combine; (b) impute in **native v20.1 space**, before the title-fix crosswalk, so DWA/IWA/GWA strings match the pool (v20.1 and v30.1 DWA titles diverge). v1-exclusive tasks with no work-activity mapping are dropped.
 
-14. **AEI v6 is a different vintage and format — never route it down the 2010-SOC AEI path.** The June 2026 release switched to O*NET v30.1 task statements and 2019 SOC codes, and to a new raw schema (`category_name`/`hierarchy_level`/`metric_id`/`node_name`; collaboration lives in per-type `collaboration_*_pct` metrics with no `not_classified` category). Feeding v6 through `pct_to_onet_tasks` against v20.1 statements silently drops ~13–22% of tasks and misattributes the rest, so v6 runs use their own Part 1 branch and take the MCP/ECO-2025 gates everywhere (`aei_v6_run`; the run-type checks that string-match `"aei"` in filenames must exclude `"v6"`). v6 stays out of the 2015-task-set cumulative buckets. Also note: v6 values are rounded to 2 decimals and ship no conversation counts — roughly half of listed tasks have `pct = 0.00` (kept as zero-share rows), and the lost precision is redistributed by renormalization; absolute volumes are not recoverable.
+14. **AEI v6 is a different vintage and format — never route it down the 2010-SOC AEI path.** The June 2026 release switched to O*NET v30.1 task statements and 2019 SOC codes, and to a new raw schema (`category_name`/`hierarchy_level`/`metric_id`/`node_name`; collaboration lives in per-type `collaboration_*_pct` metrics with no `not_classified` category). Feeding v6 through `pct_to_onet_tasks` against v20.1 statements silently drops ~13–22% of tasks and misattributes the rest, so v6 runs use their own Part 1 branch and take the MCP/ECO-2025 gates everywhere (`aei_v6_run`; the run-type checks that string-match `"aei"` in filenames must exclude `"v6"`). v6 stays out of the 2015-task-set cumulative buckets. Also note: v6 rounds to 2 decimals and ships no conversation counts, so ~half of listed tasks arrive at `pct = 0.00` and absolute volumes are unrecoverable. Those zeros are **censored, not empty** (§3), and the preprocessing branch fills them with `aei_v6_censored_pct_fill` before renormalization. Do not drop or re-zero them: the fill is what keeps the low-usage tail continuous across the v5 → v6 boundary, which every 2025-task-set time series crosses.
+
+15. **Part 3 cell order matters: backbone enrichment before the builder, per-file enrichment after.** Cumulative 2025-task-set buckets inherit `dws_star_rating`, `job_zone`, and `emp_change_pct__PROJ_*` from the ECO 2025 backbone when the builder joins to it — those cells only ever touch `final_eco_2025.csv`. So they must run **before** the cumulative builder, and Part 3 is ordered: rename-to-final → DWS → Job Zones → Emp Projections → cumulative builder. Do not move them back below it. With the old order the builder read a backbone that the rename cell had just overwritten with the un-enriched third pass, and every cumulative file came out three columns short with no error. Eloundu and the column reorder are the opposite kind — they glob `final_*.csv` and merge into each file individually, so they must run **after** the builder. Any new enrichment step needs to be classified as backbone-inherited or per-file and placed accordingly.
