@@ -72,7 +72,15 @@ frequency_weights = {1: 1/260, 2: 4/260, 3: 24/260, 4: 104/260, 5: 1, 6: 3, 7: 8
 jan_2020_inflation_factor = 1.24   # scraped wages to present value
 may_2015_inflation_factor = 1.36   # 2015 BLS wages to present value
 aei_v6_censored_pct_fill = 0.0027  # fill for v6 pct values censored to 0.00 by rounding
+task_workday_hours = 7.0           # budget that time_per_day is renormalized onto
 ```
+
+`task_workday_hours` is the source's own constraint, not a choice: the
+*Estimating Time Spent on Work* linear program solves `time_per_day` so each
+occupation's tasks sum to exactly 7.0 (verified across all 876 occupations in
+the raw file). The pipeline restores that sum after mapping onto O*NET task
+lists that differ from the source's. See §6 "Task Time Estimates" and §10
+pitfall 16.
 
 `aei_v6_censored_pct_fill` is measured, not chosen. AEI suppresses tasks below 15
 obs per 1,000,000 (`onet_task_count` bottoms out at exactly 15 in every v3–v5 raw
@@ -251,6 +259,81 @@ Runs once across all datasets.
 - **Penalty**: if an occupation has >50% of its tasks imputed below occupation level, those imputed `freq_mean` values are halved
 - For ECO 2025 only: computes `task_prop = count_2015_tasks / count_2025_tasks` per occupation (2015 tasks mapped to 2025 occupations via SOC crosswalk). Used downstream as a deflation factor when crosswalking AEI data.
 
+### Task Time Estimates
+
+Adds `time_per_day` and `time_per_instance` from `task_time_share_estimates.csv`
+(*Estimating Time Spent on Work*; 17,525 tasks / 876 occupations, O*NET v30.1 text
+and 2019 SOC). The cell sits **between** the ECO ratings cell and "Merge into second
+passes", and writes into `third_pass_eco_{2015,2025}.csv` in place — so the existing
+ratings merge carries the time columns into every per-version dataset on the same
+keys, and the cumulative builder inherits them from the ECO 2025 backbone like any
+other structural column. Re-running is idempotent (the columns are dropped before
+the merge).
+
+**Join keys.** SOC-based, not title text, since the source ships `soc_code_2019_full`:
+
+- ECO 2025: `(soc_code_2019_full, task_normalized)` — native vintage, so all 17,525 source rows land, covering 93.2% of backbone pairs.
+- ECO 2015: source 2019 SOC crosswalked to 2010 via `2010_to_2019_soc_crosswalk.csv`, then `(soc_code_2010, task_normalized)` — 83.4% direct, against an 83.9% task-text ceiling. One-to-many crosswalk targets each receive a copy; many-to-one are averaged. (Matching on normalized title instead reaches only 70.8% and recovers nothing the SOC join misses.)
+
+**Why coverage is not 100%** (the question this section exists to answer). The source
+is built from `task_ratings_v30.1`; ECO 2025 is built from `task_statements_v30.1`.
+Same O*NET vintage — different file. The statements file is the superset:
+
+| Set | Pairs | Occupations |
+|-----|-------|-------------|
+| `task_statements_v30.1` (= ECO 2025) | 18,796 | 923 |
+| `task_ratings_v30.1` | 17,951 | 894 |
+| `task_time_share_estimates.csv` | 17,525 | 876 |
+
+The 1,271-pair ECO 2025 gap decomposes exactly: **845** are tasks O*NET lists but has
+never surveyed (blank `Task Type`, blank `Incumbents Responding`, absent from the
+ratings file — 563 of them in 29 wholly unsurveyed occupations, 282 inside covered
+ones), and **426** are rated tasks belonging to 18 occupations the source drops
+wholesale (Nurse Practitioners, Waiters and Waitresses, Cooks/Fast Food, Air Traffic
+Controllers, Radiologic and MRI Technologists, …) — largely part-time, shift-based, or
+clinical work where a fixed daily workday is ill-defined. There is **no** case where
+the source covers an occupation and omits a rated task within it, so the source is
+precisely `task_ratings_v30.1` minus 18 occupations. Nothing here is a join failure:
+all 17,525 source rows match. Loan Officers is the canonical illustration — 30 tasks
+in statements, 17 in ratings, 17 in the source, and 0 of the 13 extras rated.
+
+The practical consequence: the rows needing time imputation are largely the same rows
+where the pipeline already imputes `freq_mean` / `importance` / `relevance`, since
+neither can merge against the ratings file. Do not evaluate the imputed rows by
+comparing their `importance`/`relevance` against matched rows — those values are
+themselves imputed, so the comparison is circular.
+
+**Imputation** mirrors the ratings chain (`MIN_FOR_IMPUTE = 5`): task-only average →
+occupation average → DWA → IWA → GWA → major occupation category → global mean. Both
+backbones reach 100% coverage; ECO 2025 needs imputation on ~6% of rows, ECO 2015 on
+~16%. The frequency-halving penalty from the ratings chain is deliberately not applied.
+
+**Renormalization.** `time_per_day` is a budget allocation, not a free-standing
+quantity — the source constrains each occupation's tasks to sum to
+`task_workday_hours`. The O*NET task lists here are not the source's (v30.1 adds and
+retires tasks; v20.1 is a different vintage), so after imputation each occupation is
+rescaled back onto the 7-hour budget, summing over **unique `(occupation, task)`
+pairs** because the ECO frames duplicate each task across its DWA/IWA/GWA rows. Scale
+factors run p05 0.87 / median 1.00 on ECO 2025 and p05 0.78 / median 1.00 / p95 1.86
+on ECO 2015. `time_per_instance` is an intrinsic per-execution duration, so it is
+imputed but never rescaled.
+
+Two caveats worth carrying into any published output. Rescaling is not free: Loan
+Officers' 17 genuine source estimates are multiplied by 0.567 to make room for 13
+tasks O*NET has never surveyed, so well-measured values are compressed by unmeasured
+ones. And for the 18 occupations the source drops (waiters, fast-food cooks, air
+traffic controllers, …) the pipeline imputes every value *and* forces a 7-hour budget
+— precisely the assumption the source appears to have declined to make for them. If a
+more conservative treatment is ever wanted, leave `time_per_day` null on the 845
+never-surveyed pairs instead of imputing them; occupation sums then land at ≤ 7
+honestly and the source's published values are never touched.
+
+Because the budget is restored on the *full* task list, summing `time_per_day` over an
+AI dataset (which covers a subset) yields the hours of an occupation's workday that
+dataset touches — a directly interpretable exposure quantity. Note that
+`time_per_day / time_per_instance` no longer recovers the source's `daily_freq` column
+once `time_per_day` is rescaled; `daily_freq` is not carried through.
+
 ### Cumulative Datasets
 
 Nine buckets of cumulative datasets are built, each with one or more time-point versions (one per new dataset arrival). Output naming: `final_{bucket_name}_{end_date}.csv`.
@@ -394,6 +477,7 @@ Output: `third_pass_*.csv` -> copied to `final/final_*.csv`
 | `dws_ratings.csv` | O*NET | Star ratings for ECO |
 | `job_zones_v30.1.csv` | O*NET | Job Zone classifications (1--5) for ECO 2025 |
 | `full_labelset.tsv` | Eloundu et al. | Human + GPT-4 exposure labels (E0/E1/E2) per task, 2019 SOC |
+| `task_time_share_estimates.csv` | Estimating Time Spent on Work | `time_per_day` / `time_per_instance` per task, v30.1 text + 2019 SOC |
 
 ### Economic Data
 
@@ -468,3 +552,5 @@ Provenance scripts. Not part of the pipeline. Contains the one-off scripts that 
 14. **AEI v6 is a different vintage and format — never route it down the 2010-SOC AEI path.** The June 2026 release switched to O*NET v30.1 task statements and 2019 SOC codes, and to a new raw schema (`category_name`/`hierarchy_level`/`metric_id`/`node_name`; collaboration lives in per-type `collaboration_*_pct` metrics with no `not_classified` category). Feeding v6 through `pct_to_onet_tasks` against v20.1 statements silently drops ~13–22% of tasks and misattributes the rest, so v6 runs use their own Part 1 branch and take the MCP/ECO-2025 gates everywhere (`aei_v6_run`; the run-type checks that string-match `"aei"` in filenames must exclude `"v6"`). v6 stays out of the 2015-task-set cumulative buckets. Also note: v6 rounds to 2 decimals and ships no conversation counts, so ~half of listed tasks arrive at `pct = 0.00` and absolute volumes are unrecoverable. Those zeros are **censored, not empty** (§3), and the preprocessing branch fills them with `aei_v6_censored_pct_fill` before renormalization. Do not drop or re-zero them: the fill is what keeps the low-usage tail continuous across the v5 → v6 boundary, which every 2025-task-set time series crosses.
 
 15. **Part 3 cell order matters: backbone enrichment before the builder, per-file enrichment after.** Cumulative 2025-task-set buckets inherit `dws_star_rating`, `job_zone`, and `emp_change_pct__PROJ_*` from the ECO 2025 backbone when the builder joins to it — those cells only ever touch `final_eco_2025.csv`. So they must run **before** the cumulative builder, and Part 3 is ordered: rename-to-final → DWS → Job Zones → Emp Projections → cumulative builder. Do not move them back below it. With the old order the builder read a backbone that the rename cell had just overwritten with the un-enriched third pass, and every cumulative file came out three columns short with no error. Eloundu and the column reorder are the opposite kind — they glob `final_*.csv` and merge into each file individually, so they must run **after** the builder. Any new enrichment step needs to be classified as backbone-inherited or per-file and placed accordingly.
+
+16. **`time_per_day` is a budget share, so any row-level change to a task list needs a renormalize.** The source constrains each occupation's tasks to sum to `task_workday_hours` (7.0). The Task Time Estimates cell restores that sum after mapping onto the ECO task lists; skipping it would leave occupations whose O*NET task list is larger than the source's over-budget and those with smaller lists under-budget, making `time_per_day` non-comparable across occupations. Sum over **unique `(occupation, task)` pairs**, never raw rows — the ECO frames duplicate each task across its DWA/IWA/GWA rows, and summing rows would divide the budget by the taxonomy fan-out. This is the same invariant as `pct_normalized` in pitfalls 5 and 11. Note the budget is deliberately *not* re-restored on the per-version AI datasets: those cover a subset of tasks, and their sub-7 sum is the meaningful quantity (hours of the workday that dataset covers). Also, rescaling breaks the source's `time_per_day = time_per_instance × daily_freq` identity, which is why `daily_freq` is not carried through.

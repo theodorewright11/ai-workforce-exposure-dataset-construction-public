@@ -123,6 +123,7 @@ External inputs and where they come from. **[ARCHITECTURE.md §7](ARCHITECTURE.m
 |------|------------|------|
 | `dws_ratings.csv` | Utah DWS star ratings (use search and download button appears) | https://jobs.utah.gov/utwid/almiswage/all-occupations-search |
 | `full_labelset.tsv` | Eloundou et al. human + GPT-4 exposure labels | https://github.com/openai/GPTs-are-GPTs/blob/main/data/full_labelset.tsv |
+| `task_time_share_estimates.csv` | Per-task time estimates (hours per day, hours per instance) for 17,525 tasks across 876 occupations; converted from the source `.xlsx` | https://github.com/Stephanehk/Estimating-Time-Spent-On-Work/blob/main/task_time_share_estimates.xlsx |
 
 The O\*NET technology-skills, skills, knowledge, and abilities files are **not** inputs to this pipeline (they feed the downstream analysis), so they are not listed here.
 

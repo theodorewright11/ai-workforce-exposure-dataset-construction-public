@@ -90,6 +90,9 @@ data/merged_data_files/*
 # Eloundou et al. exposure labels (Part 2 filter + Part 3 columns)
 !data/full_labelset.tsv
 
+# Task time estimates (Part 3) -- converted from the source .xlsx
+!data/task_time_share_estimates.csv
+
 # BLS OEWS wage & employment + projections
 !data/oews_national_2025.csv
 !data/oews_states_2025.csv

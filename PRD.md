@@ -41,6 +41,10 @@ This repository is the reference for how the data was built, how to reproduce it
 
 **SOC Crosswalk** -- Maps 2010 SOC codes to 2019 SOC codes for AEI data compatibility.
 
+**Task Time Estimates** -- Per-task time use from *Estimating Time Spent on Work* (17,525 tasks across 876 occupations, O*NET v30.1 task text and 2019 SOC). Estimates come from a linear program over LM pairwise task-duration comparisons, calibrated against CPS per-occupation hours. Supplies `time_per_day` (hours per day, budgeted so an occupation's tasks sum to a 7-hour workday) and `time_per_instance` (hours for one execution).
+
+- Input file: `task_time_share_estimates.csv`
+
 ---
 
 ## 3. Output Datasets
@@ -126,6 +130,8 @@ Every final dataset includes these columns (some may be null depending on datase
 | `freq_mean` | Task frequency (daily occurrence rate from O*NET survey) |
 | `importance` | Task importance (1--5 from O*NET survey) |
 | `relevance` | Task relevance (0--100 from O*NET survey) |
+| `time_per_day` | Hours per day spent on this task. Renormalized so an occupation's full task list sums to a 7-hour workday on the ECO backbones; on an AI dataset (a subset of tasks) the per-occupation sum is therefore the hours of the workday that dataset covers |
+| `time_per_instance` | Hours to complete one execution of the task (not renormalized) |
 | `emp_tot_nat_2025` | National employment (BLS OEWS 2025) |
 | `a_med_nat_2025` | National median annual wage (BLS OEWS 2025) |
 | `job_zone` | O*NET Job Zone (1--5), ECO 2025 only |
@@ -146,7 +152,7 @@ The pipeline runs in three parts from a single notebook (`scripts/data_merge.ipy
 
 **Part 2** runs once across all datasets. It adds snapshot dates, O*NET taxonomy (DWA/IWA/GWA), physical task flags, and standardized auto_aug scores. Output: `second_pass_*.csv`.
 
-**Part 3** runs once across all datasets. It merges task ratings (frequency, importance, relevance), adds task_prop for ECO 2025, builds cumulative AEI datasets, adds DWS ratings, and does final column reordering. Output: `third_pass_*.csv` then `final_*.csv`.
+**Part 3** runs once across all datasets. It merges task ratings (frequency, importance, relevance) and task time estimates (`time_per_day`, `time_per_instance`), adds task_prop for ECO 2025, builds cumulative AEI datasets, adds DWS ratings, and does final column reordering. Output: `third_pass_*.csv` then `final_*.csv`.
 
 ---
 
