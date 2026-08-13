@@ -123,6 +123,7 @@ Four separate code paths depending on dataset type:
 - Computes `pct = 100 * n_ratings_capped / sum(n_ratings_capped)` so unique (occupation, task) pairs sum to 100
 - Maps to O*NET v30.1 task statements
 - Crosswalks SOC codes to 2019 where needed
+- After `final_cleanup()`, the raw rating columns are merged back onto the task frame on `(task_normalized, title_current_normalized)`. That list includes `n_rating_1`--`n_rating_5`, the per-level rating count histogram (see "MCP rating histogram" below). The merge keys are unique in every `task_results_*.csv`, so this is 1:1 with no row fan-out and 100% coverage
 
 **Microsoft path**:
 - Loads `iwa_metrics.csv` (IWA-level `share_user`, `share_ai` metrics)
@@ -233,6 +234,37 @@ The previous distribution-based method (mapping each IWA scope through MCP ratin
 **AEI v1**: No auto/aug data available (column stays null).
 
 **MCP**: Already has `auto_aug_mean` and `auto_aug_mean_adj` (adjusted, preferred) from the classification pipeline.
+
+### MCP rating histogram (`n_rating_1`--`n_rating_5`)
+
+`task_results_*.csv` ships five per-level rating counts alongside the summary stats. They were added to all four MCP input files in a purely additive update (every pre-existing column is byte-identical), so nothing upstream of them needs recomputing.
+
+Routing through the pipeline:
+
+| Stage | Cell | Behavior |
+|-------|------|----------|
+| Part 1 | `final_cleanup` cell | Added to `mcp_numeric_cols` and merged back onto the task frame. A presence check raises if a `task_results_*.csv` has some but not all five |
+| Part 2 | Cleanup cell (step 3) | **Not** in `cols_to_drop` — deliberately retained, unlike the sibling stats (`n_ratings`, `median_rating`, `max_rating`, `min_rating`, `p25_rating`, `p75_rating`), which are dropped there while `mean_rating` is renamed to `auto_aug_mean` |
+| Part 2/3 | Reorder, ratings merge, rename-to-final | Pass-through; no cell selects columns |
+| Part 3 | Column reorder cell | In `mcp_extra_cols`, positioned just before `top_mcps`/`top_mcp_urls` so the numeric MCP extras stay contiguous |
+
+They reach `final_mcp_v{1..4}.csv` only. Cumulative buckets carry `pct_normalized`, `auto_aug_mean`, and `date` plus ECO 2025 backbone columns, so MCP-only columns do not propagate there — the same as `top_mcps`/`top_mcp_urls`.
+
+**What the five columns are.** The upstream MCP classifier rates on a 1--5 scale, then discards every level-1 rating and rescales the surviving levels 2--5 back onto 1--5 (`{1, 2.33, 3.67, 5}`) before computing any statistic. Two consequences:
+
+- `n_rating_2 + n_rating_3 + n_rating_4 + n_rating_5 == n_ratings` **exactly, on 100% of rows in all four files**. `n_rating_1` is deliberately outside that total.
+- `n_rating_1` is the discarded level-1 volume (~40% of all raw ratings). It is the only place in the pipeline where that quantity is visible — every other MCP column is computed after the drop.
+
+**All six published stats reconstruct exactly from these counts** (verified against all four files; residuals are only the source's 2-decimal rounding):
+
+| Stat | Definition |
+|------|-----------|
+| `min_rating`, `max_rating`, `median_rating`, `p25_rating`, `p75_rating` | Ordinary statistics over the rescaled level-2--5 vector |
+| `mean_rating` (→ `auto_aug_mean`) | Mean of the **top 5** ratings, not of all of them |
+
+The `mean_rating` definition is the one to carry into analysis: MCP's `auto_aug_mean` is a **peak** statistic, not a central one, and its meaning shifts with sample size. Where `n_ratings <= 5` (40--50% of rows) it is the full mean; above that it is an upper-tail mean. Across a file the top-5 mean averages ~2.15--2.34 versus ~1.68--1.69 for the full-distribution mean — so it runs roughly 0.5 points hotter by construction.
+
+Because the histogram now reaches `final_mcp_v*.csv`, a full-distribution `auto_aug_mean` (or any other reweighting, including one that restores the level-1 ratings) can be recomputed downstream without returning to `task_results_*.csv`. Treat the histogram as its own signal rather than as the decomposition behind `auto_aug_mean`.
 
 Output: `second_pass_*.csv`
 
@@ -442,7 +474,7 @@ Helper `mode_or_na` is defined inline in the cell. Pair lookup is built via `gro
 
 ### Column Reorder
 
-Final column ordering applied. The reorder cell pulls a per-dataset list of columns out of their current positions and inserts them as a contiguous block immediately after `physical`. Within that block the order is: cumulative score cols (where applicable) → ratings (`freq_mean`, `importance`, `relevance`) → ECO/MCP extras (`task_prop`, `dws_star_rating`, `job_zone`, `emp_change_pct_2024_2034`, `top_mcps`/`top_mcp_urls`) → **Eloundu cols** (`eloundu_human`, `eloundu_gpt4`). Eloundu sits at the tail of the block so it lands right before the national + state wage/employment columns.
+Final column ordering applied. The reorder cell pulls a per-dataset list of columns out of their current positions and inserts them as a contiguous block immediately after `physical`. Within that block the order is: cumulative score cols (where applicable) → ratings (`freq_mean`, `importance`, `relevance`, `time_per_day`, `time_per_instance`) → ECO/MCP extras (`task_prop`, `dws_star_rating`, `job_zone`, `emp_change_pct_2024_2034`, `n_rating_1`--`n_rating_5`, `top_mcps`/`top_mcp_urls`) → **Eloundu cols** (`eloundu_human`, `eloundu_gpt4`). Eloundu sits at the tail of the block so it lands right before the national + state wage/employment columns.
 
 Output: `third_pass_*.csv` -> copied to `final/final_*.csv`
 

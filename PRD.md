@@ -28,6 +28,7 @@ This repository is the reference for how the data was built, how to reproduce it
 **MCP Server Pipeline** -- AI task classifications from Model Context Protocol server logs. Four cumulative versions (Apr 2025 -- Feb 2026). Uses O*NET v30.1 (2025) task statements and 2019 SOC codes.
 
 - Input files: `task_results_{date}.csv` (one per version date)
+- Each input also ships a per-level rating count histogram (`n_rating_1`--`n_rating_5`), carried through to `final_mcp_v{1..4}.csv`. Level-1 ratings are dropped upstream and levels 2--5 rescaled onto 1--5, so `n_rating_2..5` sum exactly to `n_ratings` while `n_rating_1` records the discarded volume (~40% of raw ratings). Note that MCP's `auto_aug_mean` is the mean of a task's **top 5** ratings, not all of them. See ARCHITECTURE.md §5 "MCP rating histogram"
 
 **Microsoft Copilot Analysis** -- Assessment of AI automation/augmentation from Copilot usage data (Sep 2024). Uses IWA-level metrics mapped to tasks. Also includes physical task flags.
 
@@ -141,6 +142,8 @@ Every final dataset includes these columns (some may be null depending on datase
 | `date` | Dataset snapshot date |
 
 Plus state-level wage and employment columns for all 54 US states/territories (`emp_{abbrev}`, `a_median_{abbrev}`, `h_median_{abbrev}` for both 2025 and 2015), and 2015 wage/employment columns (nominal and inflation-adjusted).
+
+The MCP per-version datasets (`final_mcp_v{1..4}.csv`) additionally carry source-specific columns not present elsewhere: `n_rating_1`--`n_rating_5` (per-level rating count histogram) and `top_mcps` / `top_mcp_urls`. These are per-version only -- cumulative buckets keep just the combined `pct_normalized` / `auto_aug_mean` / `date` plus ECO 2025 backbone columns.
 
 ---
 
